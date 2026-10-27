@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Voidmaker — personaliza ISOs live de Void Linux desde una TUI.
+# Uso: sudo ./voidmaker
+# Dependencias: xorriso, squashfs-tools, e2fsprogs, openssl.
+
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for f in "$ROOT"/lib/*.sh "$ROOT"/modules/*.sh; do
+    # shellcheck disable=SC1090
+    source "$f"
+done
+
+ui_status() {
+    if [[ -n $DISTRO ]]; then
+        printf ' \e[2mISO:\e[0m %s   \e[2mCambios:\e[0m %s\n' "$(basename "$ISO_FILE")" "$(core_changes_count)"
+    else
+        printf ' \e[2mNinguna ISO cargada\e[0m\n'
+    fi
+}
+
+main() {
+    core_need_root
+    core_need_cmds xorriso unsquashfs mksquashfs mkfs.ext4 e2label mount chroot mountpoint
+    core_workdirs
+    exec 9>"$WORK/lock"
+    if command -v flock >/dev/null 2>&1 && ! flock -n 9; then
+        core_die "Voidmaker ya está abierto en otra terminal."
+    fi
+    core_load_state
+    tui_init
+    trap core_cleanup EXIT
+
+    local empty=(
+        "Cargar una ISO de Void::Empieza aquí: elige la ISO que quieres personalizar"
+        "Ayuda: qué puedo modificar::Guía rápida de todo lo que se puede cambiar"
+        "Salir::Cierra Voidmaker")
+    local full=(
+        "Ver qué trae la ISO::Resumen simple: sistema, usuarios, servicios, idioma, arranque"
+        "Programas::Lista editable en txt, escritorios, instalar y quitar"
+        "Usuarios y contraseñas::Crear usuarios, contraseñas, grupos, sudo"
+        "Servicios::Elige qué arranca solo: red, SSH, escritorio..."
+        "Configuración del sistema::Idioma, teclado, hora, repositorios, mensajes, módulos"
+        "Menú de arranque::Nombres del menú y parámetros al iniciar"
+        "Archivos::Añadir, editar o borrar archivos dentro de la ISO"
+        "Terminal dentro de la ISO::Para hacer cualquier cosa a mano"
+        "CREAR LA ISO NUEVA::Empaqueta todos tus cambios en una ISO lista para probar"
+        "Cargar otra ISO::Descarta el trabajo actual y empieza con otra"
+        "Descartar todos los cambios::Vuelve a la ISO original (pide confirmación)"
+        "Ayuda: qué puedo modificar::Guía rápida de todo lo que se puede cambiar"
+        "Salir::Tu trabajo queda guardado para la próxima vez")
+
+    while true; do
+        if [[ -z $DISTRO ]]; then
+            tui_menu "Bienvenido" "${empty[@]}" || break
+            case $MENU_SEL in
+            0) extract_run ;;
+            1) help_run ;;
+            2) break ;;
+            esac
+        else
+            tui_menu "Menú principal" "${full[@]}" || break
+            case $MENU_SEL in
+            0) summary_run ;;
+            1) packages_menu ;;
+            2) users_menu ;;
+            3) services_menu ;;
+            4) config_menu ;;
+            5) boot_menu ;;
+            6) files_menu ;;
+            7) terminal_menu ;;
+            8) build_run ;;
+            9) extract_run ;;
+            10) extract_reset ;;
+            11) help_run ;;
+            12) break ;;
+            esac
+        fi
+    done
+}
+
+main "$@"
